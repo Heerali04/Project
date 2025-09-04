@@ -1,0 +1,47 @@
+Nipah Virus RT-PCR Report (Mock — Educational
+Use Only)
+Laboratory Name: Greenfield Diagnostic Labs
+Lab Adress: 12 Heath Park Road. Civile
+Phono: +91-12345,67800
+‘Accreditation: NABL (Mock)
+Patient Information
+Name Rahul Mehta
+‘Age Sex 235, Male
+Patent O P-NIP-0034
+Contact “181-9800
+‘Sample Information
+Sample ype Throat ewab
+‘Sample colected on 02.09.2025, 08:30
+‘Sample received by lab 02.09.2025, 11:00
+‘Sample condtion on eceit | Good
+Test Performed
+Test name ‘Nipah Virus RNA — Real-Time RT-PCR
+Gone argos ‘Nipah N gene, G gene
+Method Realtime revere transcription polymerase chain action
+KivPatlorm used Examplokit Nipah v.0
+Analyst Lab Tech — A Sharma
+Result
+vera result: Positive
+Findings (per taro)
+N gene — Detected (C1 = 22.5)
+G gone — Detected (Ct= 23.1)
+Interpretation
+Nipah vius ANA detected. A postive RT-PCR result ndicates the presence of Nipah viral ANA in
+the sample. Given the low Ct values (ow 20s) ths suggests a high val lad, Immediate isolation
+‘and ugent medica attention are advised
+Clinical Recommendations
+
+Ieolate patient immediately in a healthcare facility with appropriate biosaely measures
+
+Notiy local and ational public heath authortes.
+
+Begin supporive lreatment and monitor for encephalitis or respiratory distress.
+Limitations
+Negative results do not rule out Nipah infection if the sample was taken to early or improperly
+colacted. Indeterminate results may occur due to techicalssues or low viral RNA levels. Repeat
+{esting i recommended if clinically indicated
+Report Date & Authorization
+Report issued on: 04-08-2025, 11:30
+‘Authorized by: Dr. S. Kapoor (Pathologist) — cgital signature
+This a mock Nipab RT-PCR report generated for educationaiproject purposes only. Not for
+clinical use.
