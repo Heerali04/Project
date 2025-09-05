@@ -1,41 +1,53 @@
-
 import os
 import re
 import json
 import pytesseract
 import fitz
+import sqlite3
 from PIL import Image
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
+from werkzeug.security import generate_password_hash, check_password_hash
 import tempfile
 import difflib
 
-# Tesseract path (update if needed)
-pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+# ---------------- Flask Setup ----------------
+pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
 app = Flask(__name__)
-CORS(app)  # Allow React frontend access
+CORS(app)
 
-UPLOAD_FOLDER = 'uploads'
+UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'pdf'}
+app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
+ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "pdf"}
 
-USERS_FILE = "users.json"
 REPORTS_FILE = "reports.json"
 
-# Initialize users and reports files
-if not os.path.exists(USERS_FILE):
-    with open(USERS_FILE, "w") as f:
-        json.dump([{"username": "admin", "password": "admin123"}], f)
-if not os.path.exists(REPORTS_FILE):
-    with open(REPORTS_FILE, "w") as f:
-        json.dump([], f)
+# ---------------- Database Setup ----------------
+DB_FILE = "users.db"
 
-# ---------------- Helper functions ----------------
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL
+        )
+    """
+    )
+    conn.commit()
+    conn.close()
+
+init_db()
+
+# ---------------- Helpers ----------------
 def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def fuzzy_find(word, text):
     words = text.lower().split()
@@ -54,45 +66,70 @@ def get_suggestions(disease, result):
             return "Test positive for an unspecified zoonotic disease. Consult a healthcare professional."
     return "Test result is negative. Continue to monitor symptoms."
 
-# ---------------- Routes ----------------
-@app.route('/login', methods=['POST'])
+# ---------------- Auth Routes ----------------
+@app.route("/register", methods=["POST"])
+def register():
+    data = request.json
+    username = data.get("username")
+    password = data.get("password")
+
+    if not username or not password:
+        return jsonify({"success": False, "message": "Username and password required"}), 400
+
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        hashed_pw = generate_password_hash(password)
+        cursor.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, hashed_pw))
+        conn.commit()
+        conn.close()
+        return jsonify({"success": True, "message": "User registered successfully"})
+    except sqlite3.IntegrityError:
+        return jsonify({"success": False, "message": "Username already exists"}), 400
+    except Exception as e:
+        return jsonify({"success": False, "message": f"Error: {str(e)}"}), 500
+
+@app.route("/login", methods=["POST"])
 def login():
     data = request.json
     username = data.get("username")
     password = data.get("password")
+
     if not username or not password:
         return jsonify({"success": False, "message": "Username and password required"}), 400
+
     try:
-        with open(USERS_FILE, "r") as f:
-            try:
-                users = json.load(f)
-            except json.JSONDecodeError:
-                users = []
-        for user in users:
-            if user["username"] == username and user["password"] == password:
-                return jsonify({"success": True, "message": "Login successful"})
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("SELECT password FROM users WHERE username = ?", (username,))
+        row = cursor.fetchone()
+        conn.close()
+
+        if row and check_password_hash(row[0], password):
+            return jsonify({"success": True, "message": "Login successful"})
         return jsonify({"success": False, "message": "Invalid username or password"}), 401
     except Exception as e:
-        return jsonify({"success": False, "message": f"Error reading users: {str(e)}"}), 500
+        return jsonify({"success": False, "message": f"Error: {str(e)}"}), 500
 
-@app.route('/upload', methods=['POST'])
+# ---------------- File Upload / OCR ----------------
+@app.route("/upload", methods=["POST"])
 def upload_file():
-    if 'file' not in request.files:
+    if "file" not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
-    file = request.files['file']
-    if file.filename == '':
+    file = request.files["file"]
+    if file.filename == "":
         return jsonify({"error": "No file selected"}), 400
     if not allowed_file(file.filename):
         return jsonify({"error": "Invalid file type"}), 400
 
     filename = secure_filename(file.filename)
-    file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    file_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
     try:
         file.save(file_path)
         text = ""
-        config = r'--oem 3 --psm 6'
+        config = r"--oem 3 --psm 6"
 
-        if filename.lower().endswith('.pdf'):
+        if filename.lower().endswith(".pdf"):
             with fitz.open(file_path) as doc:
                 with tempfile.TemporaryDirectory() as temp_dir:
                     for page_num in range(len(doc)):
@@ -104,8 +141,8 @@ def upload_file():
         else:
             text = pytesseract.image_to_string(Image.open(file_path), config=config)
 
-        disease_match = re.search(r'\b(Nipah|Rabies|Dengue|Zoonotic)\b', text, re.IGNORECASE)
-        ct_match = re.search(r'\(?C\s?t(?:\s*Value)?\s*[:=]?\s*(\d+(\.\d+)?)\)?', text, re.IGNORECASE)
+        disease_match = re.search(r"\b(Nipah|Rabies|Dengue|Zoonotic)\b", text, re.IGNORECASE)
+        ct_match = re.search(r"\(?C\s?t(?:\s*Value)?\s*[:=]?\s*(\d+(\.\d+)?)\)?", text, re.IGNORECASE)
 
         disease = disease_match.group(1) if disease_match else "Unknown"
         result = "Positive" if fuzzy_find("positive", text) else "Negative" if fuzzy_find("negative", text) else "Unknown"
@@ -116,10 +153,9 @@ def upload_file():
             "disease": disease,
             "result": result,
             "ct_value": ct_value,
-            "suggestion": suggestion
+            "suggestion": suggestion,
         }
 
-        # Save to reports file safely
         try:
             with open(REPORTS_FILE, "r+") as f:
                 try:
@@ -129,6 +165,7 @@ def upload_file():
                 data.append(report_entry)
                 f.seek(0)
                 json.dump(data, f, indent=2)
+                f.truncate()
         except Exception as e:
             return jsonify({"error": f"Failed to save report: {str(e)}"}), 500
 
@@ -138,7 +175,8 @@ def upload_file():
         if os.path.exists(file_path):
             os.remove(file_path)
 
-@app.route('/reports', methods=['GET'])
+# ---------------- Reports ----------------
+@app.route("/reports", methods=["GET"])
 def get_reports():
     try:
         with open(REPORTS_FILE, "r") as f:
@@ -151,5 +189,5 @@ def get_reports():
         return jsonify({"error": str(e)}), 500
 
 # ---------------- Run ----------------
-if __name__ == '__main__':
+if __name__ == "__main__":
     app.run(debug=True, port=5000)
