@@ -2,13 +2,13 @@ import React, { useState } from "react";
 import { BrowserRouter as Router, Routes, Route, Link, Navigate } from "react-router-dom";
 import UploadPage from "./components/UploadPage";
 import Dashboard from "./components/Dashboard";
-import LoginPage from "./components/LoginPage";
+import AuthPage from "./components/AuthPage";
 
 function App() {
   const [loggedIn, setLoggedIn] = useState(false);
 
   const handleLogout = () => {
-    setLoggedIn(false);         // clear login state
+    setLoggedIn(false); // clear login state
   };
 
   return (
@@ -31,10 +31,13 @@ function App() {
 
         <main>
           <Routes>
+            {/* Auth Page (Signup + Login in one component) */}
             <Route
               path="/login"
-              element={<LoginPage setLoggedIn={setLoggedIn} />}
+              element={<AuthPage setLoggedIn={setLoggedIn} />}
             />
+
+            {/* Protected routes */}
             <Route
               path="/"
               element={loggedIn ? <UploadPage /> : <Navigate to="/login" />}
