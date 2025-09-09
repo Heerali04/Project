@@ -71,6 +71,8 @@ def save_report(report_entry):
 
 def serialize_report(report):
     report["_id"] = str(report["_id"])
+    if isinstance(report.get("ct_values"), str) and report["ct_values"] == "N/A":
+        report["ct_values"] = {}
     return report
 
 # ---------------- Load ML Models ----------------
@@ -130,50 +132,56 @@ def upload_file():
 
     try:
         file.save(file_path)
+        print(f"✅ File saved: {file_path}")   # DEBUG
 
         text = ""
+
+        # --- Extract text ---
         if filename.lower().endswith(".pdf"):
             with fitz.open(file_path) as doc:
-                for page in doc:
-                    page_text = page.get_text()
-                    if not page_text.strip():
-                        pix = page.get_pixmap()
-                        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-                        page_text = pytesseract.image_to_string(img, config="--oem 3 --psm 6")
-                    text += page_text
+                for page_num in range(len(doc)):
+                    page = doc.load_page(page_num)
+                    text += page.get_text()
         else:
-            text = pytesseract.image_to_string(Image.open(file_path), config="--oem 3 --psm 6")
+            config = r"--oem 3 --psm 6"
+            text = pytesseract.image_to_string(Image.open(file_path), config=config)
 
+        print(f"✅ Extracted text (first 200 chars): {text[:200]}")  # DEBUG
+
+        # --- Regex extraction ---
         disease_match = re.search(r"(Dengue|Nipah|Rabies|Zoonotic)", text, re.IGNORECASE)
-        disease = disease_match.group(1) if disease_match else "Unknown"
+        result_match = re.search(r"Overall result:\s*(Positive|Negative)", text, re.IGNORECASE)
 
-        result_match = re.search(
-            r"(not\s+detected|negative|positive|detected|unclear)",
+        # Capture Ct values in two formats
+        ct_values = {}
+
+        # Format 1: Inline style "(Ct = 23.5)"
+        matches_format1 = re.findall(
+            r"([A-Za-z0-9]+ gene).?\(Ct\s*=?\s*([\d.]+)\)",
             text,
-            re.IGNORECASE,
+            re.IGNORECASE
         )
-        if result_match:
-            result_raw = result_match.group(1).lower().strip()
-            if "not detected" in result_raw or result_raw == "negative":
-                result = "Negative"
-            elif result_raw in ["positive", "detected"]:
-                result = "Positive"
-            elif "unclear" in result_raw:
-                result = "Unclear"
-            else:
-                result = "Unknown"
-        else:
-            result = "Unknown"
 
-        ct_match = re.search(r"Ct\s*=?\s*(\d+(\.\d+)?)", text, re.IGNORECASE)
-        ct_value = ct_match.group(1) if ct_match else "N/A"
+        # Format 2: Table style ("N gene Detected 23.8")
+        matches_format2 = re.findall(
+            r"(NS1 gene|E gene|N gene|G gene)\s+Detected\s+([\d.]+)",
+            text,
+            re.IGNORECASE
+        )
+
+        for gene, value in matches_format1 + matches_format2:
+            ct_values[gene.strip()] = value
+
+        disease = disease_match.group(1) if disease_match else "Unknown"
+        result = result_match.group(1) if result_match else "Unknown"
 
         suggestion = get_suggestions(disease, result)
 
         report_entry = {
             "disease": disease,
             "result": result,
-            "ct_value": ct_value,
+            "ct_values": ct_values if ct_values else "N/A",
+            "ct_value": ", ".join([f"{g}: {v}" for g, v in ct_values.items()]) if ct_values else "N/A",
             "suggestion": suggestion,
             "raw_text": text,
             "created_at": datetime.utcnow(),
@@ -185,7 +193,9 @@ def upload_file():
         return jsonify(report_entry)
 
     except Exception as e:
+        print(f"❌ Upload failed: {str(e)}")  # DEBUG
         return jsonify({"error": str(e)}), 500
+
     finally:
         if os.path.exists(file_path):
             os.remove(file_path)
@@ -251,12 +261,12 @@ def predict_symptoms():
         "confidence": confidence,
         "suggestion": get_suggestions(prediction, "possible") if confidence > 50 else None,
         "created_at": datetime.utcnow(),
-        "source": "ml-symptoms"
+        "source": "ml-symptoms",
+        "ct_values": {}  # keep structure consistent
     }
 
     save_report(report_entry)
     return jsonify(report_entry)
-
 
 # ---------------- Reports History ----------------
 @app.route("/reports", methods=["GET"])
@@ -275,7 +285,6 @@ def clear_reports():
         return jsonify({"success": True, "message": "All reports cleared."})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
-
 
 # ---------------- Run ----------------
 if __name__ == "__main__":
